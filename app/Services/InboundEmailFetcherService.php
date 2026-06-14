@@ -28,7 +28,7 @@ class InboundEmailFetcherService
             ];
 
             if (! empty($attachment['content_id'])) {
-                $mapped['content_id'] = $attachment['content_id'];
+                $mapped['content_id'] = trim($attachment['content_id'], '<>');
             }
 
             $attachments[] = $mapped;
