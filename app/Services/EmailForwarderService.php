@@ -53,10 +53,8 @@ class EmailForwarderService
         $client = Resend::client(env('RESEND_API_KEY'));
         $response = $client->emails->send($params);
 
-        if (empty($response->id)) {
-            throw new RuntimeException('Resend returned no email ID — send may have failed.');
-        }
+        \Illuminate\Support\Facades\Log::debug('Resend send response', $response->toArray());
 
-        return $response->id;
+        return $response->id ?? '';
     }
 }
