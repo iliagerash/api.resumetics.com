@@ -1,58 +1,158 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# api.resumetics.com
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 13 API that receives inbound email webhooks from Resend, resolves the real recipient email via the originating job board's API, and forwards the email to that address — preserving sender, subject, body, and attachments.
 
-## About Laravel
+## How it works
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Resend delivers inbound emails to `POST /api/webhook/resend`. The recipient address encodes the site and user:
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+s123u456@resumetics.com
+ ^^^  ^^^
+ site  user
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+The controller parses the address, creates a log record, and dispatches `RouteInboundEmailJob` to the queue. The job looks up the site's API to resolve the user's real email, then forwards the email via Resend with `reply_to` set to the original sender so the recipient can reply directly to the recruiter.
 
-## Contributing
+Static addresses (e.g. `jobs@resumetics.com`) are matched against the `static_routes` table and forwarded without any lookup.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Stack
 
-## Code of Conduct
+- **Laravel 13** — API only, no views or sessions
+- **PostgreSQL** — persistence and queue storage
+- **Resend** — inbound webhook + outbound forwarding
+- **PHP 8.3**
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Setup
 
-## Security Vulnerabilities
+### 1. Install dependencies
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+composer install
+```
 
-## License
+### 2. Configure environment
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+
+Fill in `.env`:
+
+```env
+DB_HOST=
+DB_DATABASE=
+DB_USERNAME=
+DB_PASSWORD=
+
+RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=
+RESEND_FROM_DOMAIN=resumetics.com
+```
+
+### 3. Run migrations
+
+```bash
+php artisan migrate
+```
+
+### 4. Start the queue worker
+
+**Development:**
+```bash
+php artisan queue:work --queue=email-routing
+```
+
+**Production (PM2):**
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup  # run the printed command to persist across reboots
+```
+
+## Adding a site
+
+Sites are managed directly in the database. Each site needs a `site_id` (the number in `sXXX`), the base URL of its user lookup API, and a bearer token:
+
+```bash
+php artisan tinker
+```
+
+```php
+App\Models\Site::create([
+    'site_id'  => 123,
+    'api_url'  => 'https://jobboard.example.com/api',
+    'api_key'  => 'secret-token',
+    'active'   => true,
+]);
+```
+
+The job will call `GET {api_url}/users/{user_id}/email` with `Authorization: Bearer {api_key}` and expect:
+
+```json
+{ "email": "user@example.com" }
+```
+
+If the response shape differs, set `response_path` to a dot-notation path (e.g. `data.user.email`).
+
+## Adding a static route
+
+```php
+App\Models\StaticRoute::create([
+    'recipient'  => 'jobs@resumetics.com',
+    'forward_to' => 'team@example.com',
+]);
+```
+
+## Webhook signature verification
+
+Set `RESEND_WEBHOOK_SECRET` to the `whsec_...` value from your Resend dashboard. The controller verifies the `svix-signature` header on every request. If the env var is empty, verification is skipped (useful for local testing).
+
+## Monitoring
+
+Check routing logs directly in the database:
+
+```bash
+php artisan tinker
+```
+
+```php
+// Recent failures
+App\Models\EmailRoutingLog::where('status', 'failed')->latest()->get();
+
+// All logs for a site
+App\Models\EmailRoutingLog::where('site_id', 123)->latest()->get();
+```
+
+PM2 process status:
+```bash
+pm2 status
+pm2 logs resumetics-queue
+```
+
+## File structure
+
+```
+app/
+  Http/Controllers/
+    ResendWebhookController.php   # webhook entry point + signature verification
+  Jobs/
+    RouteInboundEmailJob.php      # resolves user email and forwards
+    ForwardStaticEmailJob.php     # forwards static-route emails
+  Models/
+    Site.php
+    StaticRoute.php
+    EmailRoutingLog.php
+  Services/
+    UserEmailResolverService.php  # HTTP call to site's user API
+    EmailForwarderService.php     # Resend outbound send
+database/
+  migrations/
+    *_create_sites_table.php
+    *_create_static_routes_table.php
+    *_create_email_routing_logs_table.php
+routes/
+  api.php
+ecosystem.config.js               # PM2 worker config
+```
