@@ -34,8 +34,31 @@ class InboundEmailFetcherService
             $attachments[] = $mapped;
         }
 
+        $html = $email->html;
+
+        // Gmail embeds inline images as data: URIs in HTML rather than cid: references.
+        // Replace them in document order with cid: references pointing to the inline attachments
+        // (those that have a content_id), which Resend makes available via download_url.
+        if ($html) {
+            $inlineAttachments = array_values(array_filter($attachments, fn ($a) => isset($a['content_id'])));
+
+            if (! empty($inlineAttachments)) {
+                $index = 0;
+                $html = preg_replace_callback(
+                    '/src="data:[^"]+"/i',
+                    function () use ($inlineAttachments, &$index) {
+                        if ($index < count($inlineAttachments)) {
+                            return 'src="cid:' . $inlineAttachments[$index++]['content_id'] . '"';
+                        }
+                        return 'src=""';
+                    },
+                    $html
+                );
+            }
+        }
+
         return [
-            'html' => $email->html,
+            'html' => $html,
             'text' => $email->text,
             'attachments' => $attachments,
         ];
