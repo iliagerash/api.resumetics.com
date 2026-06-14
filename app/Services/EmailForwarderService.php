@@ -14,7 +14,8 @@ class EmailForwarderService
         ?string $text,
         array $attachments = []
     ): string {
-        $fromAddress = 'noreply@' . env('RESEND_FROM_DOMAIN', 'resumetics.com');
+        $fromDomain = env('RESEND_FROM_DOMAIN', 'resumetics.com');
+        $fromAddress = $this->buildFromAddress($from, $fromDomain);
 
         $params = [
             'from' => $fromAddress,
@@ -42,5 +43,19 @@ class EmailForwarderService
         $response = $client->emails->send($params);
 
         return $response->id ?? '';
+    }
+
+    private function buildFromAddress(string $originalFrom, string $domain): string
+    {
+        $noreply = "noreply@{$domain}";
+
+        if (preg_match('/^(.+?)\s*<[^>]+>$/', trim($originalFrom), $matches)) {
+            $name = trim($matches[1], ' "\'');
+            if ($name !== '') {
+                return "\"{$name} via Resumetics\" <{$noreply}>";
+            }
+        }
+
+        return $noreply;
     }
 }
