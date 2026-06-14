@@ -13,14 +13,25 @@ class InboundEmailFetcherService
         $email = $client->emails->receiving->get($emailId);
 
         $attachments = [];
-        foreach ($email->attachments ?? [] as $a) {
+        $list = $client->emails->receiving->attachments->list($emailId);
+
+        foreach ($list as $a) {
             $attachment = is_array($a) ? $a : $a->toArray();
-            if (! empty($attachment['download_url'])) {
-                $attachments[] = [
-                    'filename' => $attachment['filename'] ?? 'attachment',
-                    'path' => $attachment['download_url'],
-                ];
+
+            if (empty($attachment['download_url'])) {
+                continue;
             }
+
+            $mapped = [
+                'filename' => $attachment['filename'] ?? 'attachment',
+                'path' => $attachment['download_url'],
+            ];
+
+            if (! empty($attachment['content_id'])) {
+                $mapped['content_id'] = $attachment['content_id'];
+            }
+
+            $attachments[] = $mapped;
         }
 
         return [

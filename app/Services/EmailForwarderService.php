@@ -34,6 +34,7 @@ class EmailForwarderService
                 'filename' => $a['filename'] ?? 'attachment',
                 'content' => $a['content'] ?? null,
                 'path' => $a['path'] ?? null,
+                'content_id' => $a['content_id'] ?? null,
             ]), $attachments);
         }
 
