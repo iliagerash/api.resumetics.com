@@ -28,7 +28,7 @@ class EmailForwarderService
             $params['html'] = $html;
         }
 
-        $params['text'] = $text ?: ($html ? strip_tags($html) : '');
+        $params['text'] = $text ?: ($html ? strip_tags($html) : ' ');
 
         if (! empty($attachments)) {
             \Illuminate\Support\Facades\Log::debug('Inbound attachments', $attachments);
