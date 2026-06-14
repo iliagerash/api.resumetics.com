@@ -66,7 +66,7 @@ php artisan queue:work --queue=email-routing
 
 **Production (PM2):**
 ```bash
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup  # run the printed command to persist across reboots
 ```
@@ -154,5 +154,5 @@ database/
     *_create_email_routing_logs_table.php
 routes/
   api.php
-ecosystem.config.js               # PM2 worker config
+ecosystem.config.cjs              # PM2 worker config
 ```
