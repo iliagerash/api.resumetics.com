@@ -28,9 +28,7 @@ class EmailForwarderService
             $params['html'] = $html;
         }
 
-        if ($text) {
-            $params['text'] = $text;
-        }
+        $params['text'] = $text ?: ($html ? strip_tags($html) : '');
 
         if (! empty($attachments)) {
             $params['attachments'] = array_map(fn ($a) => [
