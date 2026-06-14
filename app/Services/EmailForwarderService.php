@@ -31,10 +31,23 @@ class EmailForwarderService
         $params['text'] = $text ?: ($html ? strip_tags($html) : '');
 
         if (! empty($attachments)) {
-            $params['attachments'] = array_map(fn ($a) => [
-                'filename' => $a['filename'] ?? 'attachment',
-                'content' => $a['content'] ?? '',
-            ], $attachments);
+            \Illuminate\Support\Facades\Log::debug('Inbound attachments', $attachments);
+
+            $mapped = [];
+            foreach ($attachments as $a) {
+                $content = $a['content'] ?? $a['data'] ?? $a['body'] ?? null;
+                if (empty($content)) {
+                    continue;
+                }
+                $mapped[] = [
+                    'filename' => $a['filename'] ?? $a['name'] ?? 'attachment',
+                    'content' => $content,
+                ];
+            }
+
+            if (! empty($mapped)) {
+                $params['attachments'] = $mapped;
+            }
         }
 
         $client = Resend::client(env('RESEND_API_KEY'));
