@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\EmailRoutingLog;
 use App\Models\Site;
 use App\Services\EmailForwarderService;
+use App\Services\InboundEmailFetcherService;
 use App\Services\UserEmailResolverService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -24,7 +25,7 @@ class RouteInboundEmailJob implements ShouldQueue
         $this->onQueue('email-routing');
     }
 
-    public function handle(UserEmailResolverService $resolver, EmailForwarderService $forwarder): void
+    public function handle(UserEmailResolverService $resolver, EmailForwarderService $forwarder, InboundEmailFetcherService $fetcher): void
     {
         $log = EmailRoutingLog::findOrFail($this->logId);
         $log->update(['status' => 'resolving']);
@@ -41,6 +42,18 @@ class RouteInboundEmailJob implements ShouldQueue
         }
 
         $data = $this->payload['data'] ?? [];
+        $emailId = $data['email_id'] ?? null;
+
+        $html = $data['html'] ?? null;
+        $text = $data['text'] ?? null;
+        $attachments = $data['attachments'] ?? [];
+
+        if ($emailId && (empty($html) && empty($text))) {
+            $inbound = $fetcher->fetch($emailId);
+            $html = $inbound['html'];
+            $text = $inbound['text'];
+            $attachments = $inbound['attachments'];
+        }
 
         $resolvedEmail = $resolver->resolve($site, $log->user_id);
         $log->update(['resolved_email' => $resolvedEmail]);
@@ -49,9 +62,9 @@ class RouteInboundEmailJob implements ShouldQueue
             to: $resolvedEmail,
             from: $data['from'] ?? '',
             subject: $data['subject'] ?? '(no subject)',
-            html: $data['html'] ?? null,
-            text: $data['text'] ?? null,
-            attachments: $data['attachments'] ?? [],
+            html: $html,
+            text: $text,
+            attachments: $attachments,
         );
 
         $log->update([

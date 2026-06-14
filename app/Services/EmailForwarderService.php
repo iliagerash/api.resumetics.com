@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Resend;
-use RuntimeException;
 
 class EmailForwarderService
 {
@@ -31,29 +30,15 @@ class EmailForwarderService
         $params['text'] = $text ?: ($html ? strip_tags($html) : ' ');
 
         if (! empty($attachments)) {
-            \Illuminate\Support\Facades\Log::debug('Inbound attachments', $attachments);
-
-            $mapped = [];
-            foreach ($attachments as $a) {
-                $content = $a['content'] ?? $a['data'] ?? $a['body'] ?? null;
-                if (empty($content)) {
-                    continue;
-                }
-                $mapped[] = [
-                    'filename' => $a['filename'] ?? $a['name'] ?? 'attachment',
-                    'content' => $content,
-                ];
-            }
-
-            if (! empty($mapped)) {
-                $params['attachments'] = $mapped;
-            }
+            $params['attachments'] = array_map(fn ($a) => array_filter([
+                'filename' => $a['filename'] ?? 'attachment',
+                'content' => $a['content'] ?? null,
+                'path' => $a['path'] ?? null,
+            ]), $attachments);
         }
 
         $client = Resend::client(env('RESEND_API_KEY'));
         $response = $client->emails->send($params);
-
-        \Illuminate\Support\Facades\Log::debug('Resend send response', $response->toArray());
 
         return $response->id ?? '';
     }

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Services\EmailForwarderService;
+use App\Services\InboundEmailFetcherService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -20,17 +21,29 @@ class ForwardStaticEmailJob implements ShouldQueue
         $this->onQueue('email-routing');
     }
 
-    public function handle(EmailForwarderService $forwarder): void
+    public function handle(EmailForwarderService $forwarder, InboundEmailFetcherService $fetcher): void
     {
         $data = $this->payload['data'] ?? [];
+        $emailId = $data['email_id'] ?? null;
+
+        $html = $data['html'] ?? null;
+        $text = $data['text'] ?? null;
+        $attachments = $data['attachments'] ?? [];
+
+        if ($emailId && (empty($html) && empty($text))) {
+            $inbound = $fetcher->fetch($emailId);
+            $html = $inbound['html'];
+            $text = $inbound['text'];
+            $attachments = $inbound['attachments'];
+        }
 
         $forwarder->forward(
             to: $this->forwardTo,
             from: $data['from'] ?? '',
             subject: $data['subject'] ?? '(no subject)',
-            html: $data['html'] ?? null,
-            text: $data['text'] ?? null,
-            attachments: $data['attachments'] ?? [],
+            html: $html,
+            text: $text,
+            attachments: $attachments,
         );
     }
 }
